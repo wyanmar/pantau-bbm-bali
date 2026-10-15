@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pantau BBM Bali</title>
+<meta name="description" content="Cek SPBU di Bali yang masih ada BBM-nya, laporan langsung dari pengendara.">
+<meta name="theme-color" content="#0f172a">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+  --ok: #16a34a; --ok-bg: #dcfce7;
+  --bad: #dc2626; --bad-bg: #fee2e2;
+  --na: #94a3b8; --ink: #0f172a; --muted: #64748b;
+  --card: #fff; --line: #e2e8f0; --bg: #f8fafc;
+  --shadow: 0 6px 24px rgba(15,23,42,.14);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+#map { position: fixed; inset: 0; z-index: 0; }
+
+/* Top bar */
+.top { position: fixed; top: 0; left: 0; right: 0; z-index: 500; padding: calc(10px + env(safe-area-inset-top)) 12px 0; pointer-events: none; }
+.bar { pointer-events: auto; background: var(--card); box-shadow: var(--shadow); border-radius: 16px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; max-width: 520px; margin: 0 auto; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; flex: 1; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+@keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)} 70%{box-shadow:0 0 0 9px rgba(22,163,74,0)} 100%{box-shadow:0 0 0 0 rgba(22,163,74,0)} }
+.brand small { display: block; font-weight: 500; color: var(--muted); font-size: 11px; }
+.chip { background: var(--card); box-shadow: var(--shadow); border-radius: 999px; padding: 6px 11px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.chip i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+/* Markers */
+.mk { width: 28px; height: 28px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 900; }
+.mk.ok { background: var(--ok); }
+.mk.bad { background: var(--bad); }
+.mk.na { background: var(--na); }
+.mk.sel { transform: scale(1.4); box-shadow: 0 0 0 4px rgba(37,99,235,.9), 0 4px 12px rgba(0,0,0,.4); }
+
+/* Bottom sheet */
+.scrim { position: fixed; inset: 0; z-index: 550; background: rgba(15,23,42,.2); opacity: 0; pointer-events: none; transition: opacity .25s; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet { position: fixed; z-index: 600; left: 50%; transform: translate(-50%, 110%); bottom: 0; width: 100%; max-width: 520px; background: var(--card); border-radius: 20px 20px 0 0; box-shadow: 0 -8px 30px rgba(15,23,42,.2); transition: transform .25s ease; max-height: 80vh; overflow: auto; padding: 8px 18px calc(18px + env(safe-area-inset-bottom)); }
+.sheet.open { transform: translate(-50%, 0); }
+.grab { width: 48px; height: 6px; border-radius: 3px; background: #cbd5e1; margin: 2px auto 10px; }
+.x { position: sticky; top: 4px; float: right; width: 44px; height: 44px; border-radius: 50%; background: var(--bad); color: #fff; font-size: 22px; font-weight: 900; line-height: 44px; text-align: center; border: 3px solid #fff; }
+.sheet h2 { margin: 8px 0 4px; font-size: 18px; }
+.sub { color: var(--muted); font-size: 13px; }
+.status { margin: 14px 0; border-radius: 14px; padding: 14px; display: flex; gap: 12px; align-items: center; }
+.status.ok { background: var(--ok-bg); color: #14532d; }
+.status.bad { background: var(--bad-bg); color: #7f1d1d; }
+.status.na { background: var(--bg); color: var(--muted); }
+.status .big { font-size: 18px; font-weight: 800; }
+.status .ic { font-size: 26px; }
+.kv { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.kv span:first-child { color: var(--muted); }
+.kv span:last-child { font-weight: 600; }
+.btn { display: block; width: 100%; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 16px; border: 0; cursor: pointer; }
+.btn.nav { background: #2563eb; color: #fff; margin: 12px 0 6px; text-align: center; text-decoration: none; }
+.rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.rbtn { padding: 16px; border-radius: 14px; font-weight: 800; font-size: 16px; border: 2px solid transparent; cursor: pointer; }
+.rbtn.y { background: var(--ok-bg); color: #14532d; }
+.rbtn.n { background: var(--bad-bg); color: #7f1d1d; }
+.rbtn.sel { border-color: currentColor; }
+.send { background: var(--ink); color: #fff; margin-top: 10px; }
+.send:disabled { opacity: .35; }
+.note { font-size: 12px; color: var(--muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.toast { position: fixed; z-index: 700; left: 50%; bottom: 100px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div class="top">
+  <div class="bar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>Pantau BBM Bali<small id="info">Memuat...</small></div>
+    </div>
+    <span class="chip"><i style="background:var(--ok)"></i><b id="cOk">–</b> ada</span>
+    <span class="chip"><i style="background:var(--bad)"></i><b id="cBad">–</b> kosong</span>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet">
+  <div class="grab" id="grab"></div>
+  <button class="x" id="close">✕</button>
+  <div id="body"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+
+// ====== DATA SPBU BALI (181 SPBU dari OpenStreetMap) ======
+const STATIONS = [
+  {id:1,lat:-8.35256,lon:114.60395,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
+  {id:2,lat:-8.3248,lon:114.54098,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
+  {id:3,lat:-8.72123,lon:115.19429,name:"SPBU Kuta",area:"Kuta",reg:"Badung"},
+  {id:4,lat:-8.71371,lon:115.22316,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:5,lat:-8.50249,lon:115.13503,name:"SPBU Tabanan",area:"Tabanan",reg:"Tabanan"},
+  {id:6,lat:-8.71295,lon:115.18591,name:"SPBU 54.803.31 · Sunset Road",area:"Kuta",reg:"Badung"},
+  {id:7,lat:-8.75261,lon:115.21809,name:"SPBU Nusa Dua",area:"Nusa Dua",reg:"Badung"},
+  {id:8,lat:-8.74336,lon:115.17501,name:"SPBU Tuban",area:"Tuban",reg:"Badung"},
+  {id:9,lat:-8.47708,lon:115.61576,name:"SPBU Amlapura",area:"Amlapura",reg:"Karangasem"},
+  {id:10,lat:-8.72085,lon:115.18019,name:"SPBU Kuta",area:"Kuta",reg:"Badung"},
+  {id:11,lat:-8.54499,lon:115.21456,name:"SPBU Mengwi",area:"Mengwi",reg:"Badung"},
+  {id:12,lat:-8.70261,lon:115.17571,name:"SPBU 54.803.20 · Legian",area:"Legian",reg:"Badung"},
+  {id:13,lat:-8.67234,lon:115.2588,name:"SPBU Sanur",area:"Sanur",reg:"Denpasar"},
+  {id:14,lat:-8.687,lon:115.18673,name:"SPBU 54.801.32 · Seminyak",area:"Seminyak",reg:"Badung"},
+  {id:15,lat:-8.78198,lon:115.17485,name:"SPBU Jimbaran",area:"Jimbaran",reg:"Badung"},
+  {id:16,lat:-8.3843,lon:115.19544,name:"SPBU Petang",area:"Petang",reg:"Badung"},
+  {id:17,lat:-8.56027,lon:115.15397,name:"SPBU Mengwi",area:"Mengwi",reg:"Badung"},
+  {id:18,lat:-8.63089,lon:115.13276,name:"SPBU Canggu",area:"Canggu",reg:"Badung"},
+  {id:19,lat:-8.65164,lon:115.25418,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:20,lat:-8.54397,lon:115.21465,name:"SPBU Mengwi",area:"Mengwi",reg:"Badung"},
+  {id:21,lat:-8.43749,lon:115.59282,name:"SPBU Amlapura",area:"Amlapura",reg:"Karangasem"},
+  {id:22,lat:-8.62946,lon:115.17298,name:"SPBU Dalung",area:"Dalung",reg:"Badung"},
+  {id:23,lat:-8.64901,lon:115.18638,name:"SPBU Kerobokan",area:"Kerobokan",reg:"Badung"},
+  {id:24,lat:-8.71515,lon:115.18631,name:"SPBU Kuta",area:"Kuta",reg:"Badung"},
+  {id:25,lat:-8.52006,lon:115.17435,name:"SPBU Mengwi",area:"Mengwi",reg:"Badung"},
+  {id:26,lat:-8.33372,lon:115.18667,name:"SPBU Baturiti",area:"Baturiti",reg:"Tabanan"},
+  {id:27,lat:-8.54374,lon:115.14067,name:"SPBU Tabanan",area:"Tabanan",reg:"Tabanan"},
+  {id:28,lat:-8.68902,lon:115.17178,name:"SPBU 54.803.19 · Seminyak",area:"Seminyak",reg:"Badung"},
+  {id:29,lat:-8.67429,lon:115.25422,name:"SPBU Sanur",area:"Sanur",reg:"Denpasar"},
+  {id:30,lat:-8.67728,lon:115.2321,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:31,lat:-8.67301,lon:115.22621,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:32,lat:-8.67308,lon:115.24012,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:33,lat:-8.67298,lon:115.16518,name:"SPBU 54.803.06 · Kerobokan",area:"Kerobokan",reg:"Badung"},
+  {id:34,lat:-8.66681,lon:115.23152,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:35,lat:-8.82016,lon:115.14985,name:"SPBU Ungasan",area:"Ungasan",reg:"Badung"},
+  {id:36,lat:-8.72406,lon:115.23128,name:"SPBU Sanur",area:"Sanur",reg:"Denpasar"},
+  {id:37,lat:-8.65666,lon:115.22508,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:38,lat:-8.19109,lon:114.93267,name:"SPBU Seririt",area:"Seririt",reg:"Buleleng"},
+  {id:39,lat:-8.54693,lon:115.48592,name:"SPBU Padangbai",area:"Padangbai",reg:"Karangasem"},
+  {id:40,lat:-8.52316,lon:115.27594,name:"SPBU 54.805.12 · Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:41,lat:-8.66637,lon:115.24156,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:42,lat:-8.68622,lon:115.22638,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:43,lat:-8.66037,lon:115.2394,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:44,lat:-8.67897,lon:115.21491,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:45,lat:-8.5118,lon:115.50188,name:"SPBU Padangbai",area:"Padangbai",reg:"Karangasem"},
+  {id:46,lat:-8.50346,lon:115.55834,name:"SPBU Candidasa",area:"Candidasa",reg:"Karangasem"},
+  {id:47,lat:-8.14501,lon:115.04995,name:"SPBU Lovina",area:"Lovina",reg:"Buleleng"},
+  {id:48,lat:-8.11527,lon:115.07973,name:"SPBU Singaraja",area:"Singaraja",reg:"Buleleng"},
+  {id:49,lat:-8.71078,lon:115.22349,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:50,lat:-8.7145,lon:115.2158,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:51,lat:-8.65971,lon:115.20316,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:52,lat:-8.5527,lon:115.44028,name:"SPBU Dawan",area:"Dawan",reg:"Klungkung"},
+  {id:53,lat:-8.63826,lon:115.20897,name:"SPBU 54.801.35 · Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:54,lat:-8.63594,lon:115.21873,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:55,lat:-8.535,lon:115.30661,name:"SPBU Gianyar",area:"Gianyar",reg:"Gianyar"},
+  {id:56,lat:-8.54909,lon:115.23857,name:"SPBU 54.803.18 · Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:57,lat:-8.63594,lon:115.23773,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:58,lat:-8.63644,lon:115.25194,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:59,lat:-8.79179,lon:115.2144,name:"SPBU Nusa Dua",area:"Nusa Dua",reg:"Badung"},
+  {id:60,lat:-8.40201,lon:115.58969,name:"SPBU Abang",area:"Abang",reg:"Karangasem"},
+  {id:61,lat:-8.6752,lon:115.20234,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:62,lat:-8.57489,lon:115.27624,name:"SPBU Sukawati",area:"Sukawati",reg:"Gianyar"},
+  {id:63,lat:-8.56688,lon:115.27476,name:"SPBU Blahbatuh",area:"Blahbatuh",reg:"Gianyar"},
+  {id:64,lat:-8.69587,lon:115.18713,name:"SPBU Legian",area:"Legian",reg:"Badung"},
+  {id:65,lat:-8.68142,lon:115.19262,name:"SPBU Seminyak",area:"Seminyak",reg:"Badung"},
+  {id:66,lat:-8.36288,lon:115.34609,name:"SPBU Bangli",area:"Bangli",reg:"Bangli"},
+  {id:67,lat:-8.63642,lon:115.18535,name:"SPBU Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:68,lat:-8.64153,lon:115.27829,name:"SPBU Sukawati",area:"Sukawati",reg:"Gianyar"},
+  {id:69,lat:-8.63893,lon:115.20392,name:"SPBU Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:70,lat:-8.60181,lon:115.32479,name:"SPBU Sukawati",area:"Sukawati",reg:"Gianyar"},
+  {id:71,lat:-8.58101,lon:115.35262,name:"SPBU Gianyar",area:"Gianyar",reg:"Gianyar"},
+  {id:72,lat:-8.55381,lon:115.2515,name:"SPBU Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:73,lat:-8.46274,lon:115.2976,name:"SPBU Tegallalang",area:"Tegallalang",reg:"Gianyar"},
+  {id:74,lat:-8.17729,lon:114.75006,name:"SPBU Gerokgak",area:"Gerokgak",reg:"Buleleng"},
+  {id:75,lat:-8.20388,lon:114.88405,name:"SPBU Seririt",area:"Seririt",reg:"Buleleng"},
+  {id:76,lat:-8.32279,lon:115.61914,name:"SPBU Abang",area:"Abang",reg:"Karangasem"},
+  {id:77,lat:-8.56552,lon:115.28801,name:"SPBU Blahbatuh",area:"Blahbatuh",reg:"Gianyar"},
+  {id:78,lat:-8.5288,lon:115.27171,name:"SPBU 54.805.09 · Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:79,lat:-8.61216,lon:115.30929,name:"SPBU Sukawati",area:"Sukawati",reg:"Gianyar"},
+  {id:80,lat:-8.63578,lon:115.28722,name:"SPBU Sukawati",area:"Sukawati",reg:"Gianyar"},
+  {id:81,lat:-8.19181,lon:114.95006,name:"SPBU Seririt",area:"Seririt",reg:"Buleleng"},
+  {id:82,lat:-8.67707,lon:115.53272,name:"SPBU Nusa Penida",area:"Nusa Penida",reg:"Klungkung"},
+  {id:83,lat:-8.64139,lon:115.2518,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:84,lat:-8.78458,lon:115.19683,name:"SPBU Nusa Dua",area:"Nusa Dua",reg:"Badung"},
+  {id:85,lat:-8.7844,lon:115.1881,name:"SPBU Jimbaran",area:"Jimbaran",reg:"Badung"},
+  {id:86,lat:-8.78336,lon:115.18682,name:"SPBU Jimbaran",area:"Jimbaran",reg:"Badung"},
+  {id:87,lat:-8.67676,lon:115.2071,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:88,lat:-8.63721,lon:115.17697,name:"SPBU Dalung",area:"Dalung",reg:"Badung"},
+  {id:89,lat:-8.63653,lon:115.19475,name:"SPBU Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:90,lat:-8.67055,lon:115.19096,name:"SPBU Kerobokan",area:"Kerobokan",reg:"Badung"},
+  {id:91,lat:-8.71327,lon:115.22484,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:92,lat:-8.59416,lon:115.18675,name:"SPBU Dalung",area:"Dalung",reg:"Badung"},
+  {id:93,lat:-8.71779,lon:115.20221,name:"SPBU Kuta",area:"Kuta",reg:"Badung"},
+  {id:94,lat:-8.69538,lon:115.25907,name:"SPBU Sanur",area:"Sanur",reg:"Denpasar"},
+  {id:95,lat:-8.77038,lon:115.17819,name:"SPBU Jimbaran",area:"Jimbaran",reg:"Badung"},
+  {id:96,lat:-8.68214,lon:115.19136,name:"SPBU Seminyak",area:"Seminyak",reg:"Badung"},
+  {id:97,lat:-8.67888,lon:115.49008,name:"SPBU Nusa Penida",area:"Nusa Penida",reg:"Klungkung"},
+  {id:98,lat:-8.2007,lon:114.83214,name:"SPBU Gerokgak",area:"Gerokgak",reg:"Buleleng"},
+  {id:99,lat:-8.42692,lon:115.68395,name:"SPBU Abang",area:"Abang",reg:"Karangasem"},
+  {id:100,lat:-8.44371,lon:115.57883,name:"SPBU Amlapura",area:"Amlapura",reg:"Karangasem"},
+  {id:101,lat:-8.56848,lon:115.37462,name:"SPBU Klungkung Semarapura",area:"Klungkung",reg:"Klungkung"},
+  {id:102,lat:-8.64561,lon:115.16043,name:"SPBU Kerobokan",area:"Kerobokan",reg:"Badung"},
+  {id:103,lat:-8.11324,lon:115.08272,name:"SPBU Singaraja",area:"Singaraja",reg:"Buleleng"},
+  {id:104,lat:-8.43964,lon:115.30811,name:"SPBU Tegallalang",area:"Tegallalang",reg:"Gianyar"},
+  {id:105,lat:-8.3182,lon:115.34671,name:"SPBU Kintamani",area:"Kintamani",reg:"Bangli"},
+  {id:106,lat:-8.44466,lon:115.36279,name:"SPBU Bangli",area:"Bangli",reg:"Bangli"},
+  {id:107,lat:-8.51337,lon:115.34547,name:"SPBU Bunutin",area:"Gianyar",reg:"Gianyar"},
+  {id:108,lat:-8.61739,lon:115.11615,name:"SPBU Buwit",area:"Kediri",reg:"Tabanan"},
+  {id:109,lat:-8.08533,lon:115.17515,name:"SPBU Kubutambahan",area:"Kubutambahan",reg:"Buleleng"},
+  {id:110,lat:-8.42836,lon:115.42332,name:"SPBU Rendang",area:"Rendang",reg:"Karangasem"},
+  {id:111,lat:-8.32705,lon:115.22266,name:"SPBU Baturiti",area:"Baturiti",reg:"Tabanan"},
+  {id:112,lat:-8.41545,lon:115.28074,name:"SPBU Tegallalang",area:"Tegallalang",reg:"Gianyar"},
+  {id:113,lat:-8.41853,lon:115.29836,name:"SPBU Tegallalang",area:"Tegallalang",reg:"Gianyar"},
+  {id:114,lat:-8.32949,lon:115.32565,name:"SPBU Kintamani",area:"Kintamani",reg:"Bangli"},
+  {id:115,lat:-8.61213,lon:115.19249,name:"SPBU 54.803.01 · Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:116,lat:-8.34842,lon:114.57858,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
+  {id:117,lat:-8.35759,lon:114.6246,name:"SPBU 54.822.16 · Negara",area:"Negara",reg:"Jembrana"},
+  {id:118,lat:-8.36646,lon:114.66158,name:"SPBU Mendoyo",area:"Mendoyo",reg:"Jembrana"},
+  {id:119,lat:-8.40139,lon:114.77905,name:"SPBU Pekutatan",area:"Pekutatan",reg:"Jembrana"},
+  {id:120,lat:-8.44178,lon:114.87113,name:"SPBU Pekutatan",area:"Pekutatan",reg:"Jembrana"},
+  {id:121,lat:-8.49569,lon:115.04923,name:"SPBU Selemadeg",area:"Selemadeg",reg:"Tabanan"},
+  {id:122,lat:-8.54959,lon:115.12316,name:"SPBU 54.821.04 · Tabanan",area:"Tabanan",reg:"Tabanan"},
+  {id:123,lat:-8.23701,lon:115.13859,name:"SPBU Baturiti",area:"Baturiti",reg:"Tabanan"},
+  {id:124,lat:-8.17589,lon:115.00364,name:"SPBU Lovina",area:"Lovina",reg:"Buleleng"},
+  {id:125,lat:-8.32928,lon:115.17194,name:"SPBU Baturiti",area:"Baturiti",reg:"Tabanan"},
+  {id:126,lat:-8.46902,lon:115.13722,name:"SPBU Penebel",area:"Penebel",reg:"Tabanan"},
+  {id:127,lat:-8.45449,lon:115.13851,name:"SPBU Penebel",area:"Penebel",reg:"Tabanan"},
+  {id:128,lat:-8.67365,lon:115.17781,name:"SPBU Kerobokan",area:"Kerobokan",reg:"Badung"},
+  {id:129,lat:-8.62455,lon:115.20898,name:"SPBU Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:130,lat:-8.5625,lon:115.22044,name:"SPBU Mengwi",area:"Mengwi",reg:"Badung"},
+  {id:131,lat:-8.58958,lon:115.2157,name:"SPBU Darmasaba",area:"Ubung",reg:"Denpasar"},
+  {id:132,lat:-8.36764,lon:115.30749,name:"SPBU Tegallalang",area:"Tegallalang",reg:"Gianyar"},
+  {id:133,lat:-8.54773,lon:115.48523,name:"SPBU Padangbai",area:"Padangbai",reg:"Karangasem"},
+  {id:134,lat:-8.07911,lon:115.21992,name:"SPBU Kubutambahan",area:"Kubutambahan",reg:"Buleleng"},
+  {id:135,lat:-8.71092,lon:115.2335,name:"SPBU Sanur",area:"Sanur",reg:"Denpasar"},
+  {id:136,lat:-8.26633,lon:115.05417,name:"SPBU Lovina",area:"Lovina",reg:"Buleleng"},
+  {id:137,lat:-8.69609,lon:115.45193,name:"SPBU Nusa Penida",area:"Nusa Penida",reg:"Klungkung"},
+  {id:138,lat:-8.14657,lon:115.24728,name:"SPBU Tejakula",area:"Tejakula",reg:"Buleleng"},
+  {id:139,lat:-8.30241,lon:114.51608,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
+  {id:140,lat:-8.65045,lon:115.20905,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:141,lat:-8.83186,lon:115.20505,name:"SPBU Nusa Dua",area:"Nusa Dua",reg:"Badung"},
+  {id:142,lat:-8.45564,lon:115.60163,name:"SPBU Amlapura",area:"Amlapura",reg:"Karangasem"},
+  {id:143,lat:-8.43752,lon:115.19627,name:"SPBU Petang",area:"Petang",reg:"Badung"},
+  {id:144,lat:-8.79786,lon:115.16122,name:"SPBU Ungasan",area:"Ungasan",reg:"Badung"},
+  {id:145,lat:-8.69965,lon:115.21946,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:146,lat:-8.70916,lon:115.22107,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:147,lat:-8.64476,lon:115.20958,name:"SPBU Denpasar",area:"Denpasar",reg:"Denpasar"},
+  {id:148,lat:-8.73898,lon:115.17984,name:"SPBU Tuban",area:"Tuban",reg:"Badung"},
+  {id:149,lat:-8.80641,lon:115.2011,name:"SPBU Nusa Dua",area:"Nusa Dua",reg:"Badung"},
+  {id:150,lat:-8.25785,lon:115.16173,name:"SPBU Baturiti",area:"Baturiti",reg:"Tabanan"},
+  {id:151,lat:-8.18651,lon:114.97749,name:"SPBU Seririt",area:"Seririt",reg:"Buleleng"},
+  {id:152,lat:-8.10247,lon:115.28363,name:"SPBU Tejakula",area:"Tejakula",reg:"Buleleng"},
+  {id:153,lat:-8.52419,lon:115.26371,name:"SPBU Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:154,lat:-8.52774,lon:115.24378,name:"SPBU Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:155,lat:-8.52628,lon:115.29506,name:"SPBU Gianyar",area:"Gianyar",reg:"Gianyar"},
+  {id:156,lat:-8.67777,lon:115.21162,name:"SPBU Renon",area:"Renon",reg:"Denpasar"},
+  {id:157,lat:-8.54037,lon:115.40988,name:"SPBU Klungkung Semarapura",area:"Klungkung",reg:"Klungkung"},
+  {id:158,lat:-8.50522,lon:115.2717,name:"SPBU 54.805.20 · Ubud",area:"Ubud",reg:"Gianyar"},
+  {id:159,lat:-8.56466,lon:115.41658,name:"SPBU Klungkung Semarapura",area:"Klungkung",reg:"Klungkung"},
+  {id:160,lat:-8.21519,lon:114.94017,name:"SPBU Seririt",area:"Seririt",reg:"Buleleng"},
+  {id:161,lat:-8.19331,lon:114.92226,name:"SPBU Seririt",area:"Seririt",reg:"Buleleng"},
+  {id:162,lat:-8.26852,lon:115.34236,name:"SPBU Kintamani",area:"Kintamani",reg:"Bangli"},
+  {id:163,lat:-8.64336,lon:115.19629,name:"SPBU 54.801.31 · Buluh Indah",area:"Ubung",reg:"Denpasar"},
+  {id:164,lat:-8.0827,lon:115.1433,name:"SPBU Giri Emas",area:"Kubutambahan",reg:"Buleleng"},
+  {id:165,lat:-8.69869,lon:115.17805,name:"SPBU 54.803.34 · Sunset Road",area:"Legian",reg:"Badung"},
+  {id:166,lat:-8.60285,lon:115.17164,name:"SPBU Dalung",area:"Dalung",reg:"Badung"},
+  {id:167,lat:-8.53664,lon:115.33343,name:"SPBU Gianyar",area:"Gianyar",reg:"Gianyar"},
+  {id:168,lat:-8.66712,lon:115.18772,name:"SPBU Kerobokan",area:"Kerobokan",reg:"Badung"},
+  {id:169,lat:-8.56724,lon:115.39163,name:"SPBU Klungkung Semarapura",area:"Klungkung",reg:"Klungkung"},
+  {id:170,lat:-8.47474,lon:114.93264,name:"SPBU Selemadeg",area:"Selemadeg",reg:"Tabanan"},
+  {id:171,lat:-8.2235,lon:115.25431,name:"SPBU Kintamani",area:"Kintamani",reg:"Bangli"},
+  {id:172,lat:-8.13529,lon:115.10138,name:"SPBU Singaraja",area:"Singaraja",reg:"Buleleng"},
+  {id:173,lat:-8.42019,lon:114.80868,name:"SPBU Pekutatan",area:"Pekutatan",reg:"Jembrana"},
+  {id:174,lat:-8.35686,lon:114.63078,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
+  {id:175,lat:-8.42695,lon:114.83478,name:"SPBU Pekutatan",area:"Pekutatan",reg:"Jembrana"},
+  {id:176,lat:-8.62322,lon:115.23637,name:"SPBU Ubung",area:"Ubung",reg:"Denpasar"},
+  {id:177,lat:-8.54833,lon:115.30842,name:"SPBU Blahbatuh",area:"Blahbatuh",reg:"Gianyar"},
+  {id:178,lat:-8.54135,lon:115.32109,name:"SPBU Gianyar",area:"Gianyar",reg:"Gianyar"},
+  {id:179,lat:-8.46689,lon:115.35235,name:"SPBU Bangli",area:"Bangli",reg:"Bangli"},
+  {id:180,lat:-8.61892,lon:115.18312,name:"SPBU Dalung",area:"Dalung",reg:"Badung"},
+  {id:181,lat:-8.69146,lon:115.22793,name:"SPBU Renon",area:"Renon",reg:"Denpasar"}
+];
+
+// ====== INIT PETA ======
+const map = L.map('map', { zoomControl: true }).setView([-8.45, 115.15], 10);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  maxZoom: 18,
+  attribution: 'Tiles © Esri'
+}).addTo(map);
+
+// ====== STATE ======
+let REPORTS = [];
+let DEVICE = localStorage.getItem('dev') || ('anon-' + Math.random().toString(36).slice(2, 12));
+localStorage.setItem('dev', DEVICE);
+const markers = new Map();
+const COLORS = { ok: '#16a34a', bad: '#dc2626', na: '#94a3b8' };
+let FUEL = 'pertalite';
+
+// ====== HITUNG STATUS SPBU ======
+function stationState(s) {
+  const mine = REPORTS.filter(r => r.station_id === s.id && r.fuel === FUEL);
+  if (!mine.length) return { cls: 'na', last: null };
+  
+  // Laporan terbaru yang masih relevan (2 jam terakhir, dengan bobot waktu)
+  const now = Date.now();
+  let score = 0;
+  let last = null;
+  for (const r of mine) {
+    const ageMin = (now - new Date(r.created_at)) / 60000;
+    if (ageMin > 120) continue;
+    const weight = Math.pow(0.5, ageMin / 60); // half-life 1 jam
+    score += (r.available ? 1 : -1) * weight;
+    if (!last || new Date(r.created_at) > new Date(last.created_at)) last = r;
+  }
+  
+  const cls = score > 0.3 ? 'ok' : score < -0.3 ? 'bad' : 'na';
+  return { cls, last };
+}
+
+// ====== RENDER MARKER ======
+function icon(st) {
+  const sym = st.cls === 'ok' ? '✓' : st.cls === 'bad' ? '✕' : '?';
+  return L.divIcon({
+    className: '',
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    html: `<div class="mk ${st.cls}">${sym}</div>`
+  });
+}
+
+function render() {
+  let c = { ok: 0, bad: 0, na: 0 };
+  for (const s of STATIONS) {
+    const st = stationState(s);
+    c[st.cls]++;
+    let m = markers.get(s.id);
+    if (!m) {
+      m = L.marker([s.lat, s.lon], { icon: icon(st) })
+        .addTo(map)
+        .on('click', () => openStation(s));
+      markers.set(s.id, m);
+    } else {
+      m.setIcon(icon(st));
+    }
+  }
+  document.getElementById('cOk').textContent = c.ok;
+  document.getElementById('cBad').textContent = c.bad;
+  document.getElementById('info').textContent = `${STATIONS.length} SPBU · diperbarui baru saja`;
+}
+
+// ====== BOTTOM SHEET ======
+const sheet = document.getElementById('sheet');
+const scrim = document.getElementById('scrim');
+const body = document.getElementById('body');
+let draft = { available: null };
+
+function showSheet() { sheet.classList.add('open'); scrim.classList.add('on'); }
+function hideSheet() { sheet.classList.remove('open'); scrim.classList.remove('on'); }
+
+document.getElementById('close').onclick = hideSheet;
+document.getElementById('grab').onclick = hideSheet;
+scrim.onclick = hideSheet;
+
+function ago(ms) {
+  const m = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  if (m < 1) return 'baru saja';
+  if (m < 60) return `${m} menit lalu`;
+  return `${Math.round(m / 60)} jam lalu`;
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+function openStation(s) {
+  const st = stationState(s);
+  const ic = { ok: '⛽', bad: '🚫', na: '❓' }[st.cls];
+  const label = { ok: 'Kemungkinan ada BBM', bad: 'Kemungkinan kosong', na: 'Belum ada laporan' }[st.cls];
+  const gmaps = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving`;
+  
+  body.innerHTML = `
+    <h2>${s.name}</h2>
+    <div class="sub">${s.area}, ${s.reg}</div>
+    <div class="status ${st.cls}">
+      <div class="ic">${ic}</div>
+      <div><div class="big">${label}</div>
+      <div style="font-size:13px">Pertalite · ${st.last ? (st.last.available ? '✅' : '❌') + ' ' + ago(new Date(st.last.created_at)) : 'Belum ada laporan'}</div></div>
+    </div>
+    <a class="btn nav" href="${gmaps}" target="_blank" rel="noopener">🧭 Navigasi dengan Google Maps</a>
+    <h3 style="margin:16px 0 4px;font-size:15px">Anda sedang di SPBU ini?</h3>
+    <div class="rgrid">
+      <button class="rbtn y ${draft.available === true ? 'sel' : ''}" data-a="1">✅ Ada BBM</button>
+      <button class="rbtn n ${draft.available === false ? 'sel' : ''}" data-a="0">❌ Kosong</button>
+    </div>
+    <button class="btn send" id="send" ${draft.available === null ? 'disabled' : ''}>Kirim laporan</button>
+    <div class="note">⚠️ Aplikasi gratis hanya untuk informasi. Status adalah perkiraan dari laporan pengguna, tidak dijamin. Risiko ditanggung pengguna.</div>
+  `;
+  
+  body.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+    draft.available = b.dataset.a === '1';
+    openStation(s);
+  });
+  
+  document.getElementById('send').onclick = () => sendReport(s);
+  showSheet();
+}
+
+// ====== KIRIM LAPORAN ======
+async function sendReport(s) {
+  // Rate limit lokal: 1 laporan per SPBU per 10 menit
+  const key = `r_${s.id}_${FUEL}`;
+  try {
+    const last = +localStorage.getItem(key) || 0;
+    if (Date.now() - last < 10 * 60 * 1000) {
+      toast('Anda sudah melapor SPBU ini barusan');
+      return;
+    }
+  } catch (e) {}
+  
+  const row = {
+    station_id: s.id,
+    fuel: FUEL,
+    available: draft.available,
+    device: DEVICE
+  };
+  
+  // Optimistic update: tampilkan dulu di peta
+  REPORTS.push({ ...row, created_at: new Date().toISOString() });
+  draft = { available: null };
+  render();
+  toast('✅ Terima kasih! Laporan Anda langsung tampil.');
+  try { localStorage.setItem(key, Date.now()); } catch (e) {}
+  
+  // Kirim ke server
+  try {
+    const r = await fetch('/api/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(row)
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      if (err.error === 'rate limit') toast('Anda sudah melapor barusan');
+    }
+  } catch (e) {
+    console.error('Gagal kirim:', e);
+  }
+  
+  setTimeout(hideSheet, 800);
+}
+
+// ====== AMBIL LAPORAN DARI SERVER ======
+async function loadReports() {
+  try {
+    const r = await fetch('/api/reports');
+    if (!r.ok) return;
+    const j = await r.json();
+    const FU = ['pertalite', 'pertamax', 'solar'];
+    REPORTS = (j.rows || []).map(a => ({
+      id: a[0],
+      station_id: a[1],
+      fuel: FU[a[2]] || 'pertalite',
+      available: !!a[3],
+      created_at: new Date(a[4] * 1000).toISOString()
+    }));
+    render();
+  } catch (e) {
+    console.error('Gagal ambil laporan:', e);
+  }
+}
+
+// ====== START ======
+render();
+loadReports();
+setInterval(loadReports, 60000); // refresh tiap 1 menit
+</script>
+</body>
+</html>
