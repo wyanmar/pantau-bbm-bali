@@ -7,10 +7,9 @@
 <meta name="description" content="Cek SPBU di Bali yang masih ada BBM-nya, laporan langsung dari pengendara.">
 <meta name="theme-color" content="#0f172a">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<!-- Library untuk Marker Clustering -->
+<!-- Library untuk Marker Clustering (Opsi A) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <style>
 :root {
   --ok: #16a34a; --ok-bg: #dcfce7;
@@ -38,7 +37,6 @@ html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; back
 .mk.ok { background: var(--ok); }
 .mk.bad { background: var(--bad); }
 .mk.na { background: var(--na); }
-.mk.sel { transform: scale(1.4); box-shadow: 0 0 0 4px rgba(37,99,235,.9), 0 4px 12px rgba(0,0,0,.4); }
 
 /* Bottom sheet */
 .scrim { position: fixed; inset: 0; z-index: 550; background: rgba(15,23,42,.2); opacity: 0; pointer-events: none; transition: opacity .25s; }
@@ -55,11 +53,8 @@ html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; back
 .status.na { background: var(--bg); color: var(--muted); }
 .status .big { font-size: 18px; font-weight: 800; }
 .status .ic { font-size: 26px; }
-.kv { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; }
-.kv span:first-child { color: var(--muted); }
-.kv span:last-child { font-weight: 600; }
-.btn { display: block; width: 100%; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 16px; border: 0; cursor: pointer; }
-.btn.nav { background: #2563eb; color: #fff; margin: 12px 0 6px; text-align: center; text-decoration: none; }
+.btn { display: block; width: 100%; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 16px; border: 0; cursor: pointer; text-align: center; text-decoration: none; }
+.btn.nav { background: #2563eb; color: #fff; margin: 12px 0 6px; }
 .rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .rbtn { padding: 16px; border-radius: 14px; font-weight: 800; font-size: 16px; border: 2px solid transparent; cursor: pointer; }
 .rbtn.y { background: var(--ok-bg); color: #14532d; }
@@ -70,6 +65,8 @@ html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; back
 .note { font-size: 12px; color: var(--muted); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .toast { position: fixed; z-index: 700; left: 50%; bottom: 100px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 12px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
+.item { padding: 12px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+.item:active { background: var(--bg); }
 </style>
 </head>
 <body>
@@ -87,21 +84,25 @@ html, body { margin: 0; height: 100%; font: 15px/1.4 system-ui, sans-serif; back
   </div>
 </div>
 
+<!-- Tombol GPS Terdekat (Opsi B) -->
+<button id="btnNearest" style="position:fixed; bottom:90px; right:20px; z-index:500; background:#2563eb; color:white; width:56px; height:56px; border-radius:50%; border:none; box-shadow:0 4px 12px rgba(0,0,0,0.3); font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center;">📍</button>
+
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet">
   <div class="grab" id="grab"></div>
   <button class="x" id="close">✕</button>
   <div id="body"></div>
 </div>
-<!-- Tombol GPS Terdekat -->
-<button id="btnNearest" style="position:fixed; bottom:90px; right:20px; z-index:500; background:#2563eb; color:white; width:56px; height:56px; border-radius:50%; border:none; box-shadow:0 4px 12px rgba(0,0,0,0.3); font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center;"></button>
+
 <div class="toast" id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Script untuk Marker Clustering (Opsi A) -->
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 "use strict";
 
-// ====== DATA SPBU BALI (181 SPBU dari OpenStreetMap) ======
+// ====== DATA SPBU BALI (181 SPBU) ======
 const STATIONS = [
   {id:1,lat:-8.35256,lon:114.60395,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
   {id:2,lat:-8.3248,lon:114.54098,name:"SPBU Negara",area:"Negara",reg:"Jembrana"},
@@ -298,12 +299,14 @@ let REPORTS = [];
 let DEVICE = localStorage.getItem('dev') || ('anon-' + Math.random().toString(36).slice(2, 12));
 localStorage.setItem('dev', DEVICE);
 const markers = new Map();
-// Setup Marker Cluster
+
+// Setup Marker Cluster (Opsi A)
 const clusterGroup = L.markerClusterGroup({
   maxClusterRadius: 50,
   spiderfyOnMaxZoom: true
 });
 map.addLayer(clusterGroup);
+
 const COLORS = { ok: '#16a34a', bad: '#dc2626', na: '#94a3b8' };
 let FUEL = 'pertalite';
 
@@ -312,14 +315,13 @@ function stationState(s) {
   const mine = REPORTS.filter(r => r.station_id === s.id && r.fuel === FUEL);
   if (!mine.length) return { cls: 'na', last: null };
   
-  // Laporan terbaru yang masih relevan (2 jam terakhir, dengan bobot waktu)
   const now = Date.now();
   let score = 0;
   let last = null;
   for (const r of mine) {
     const ageMin = (now - new Date(r.created_at)) / 60000;
     if (ageMin > 120) continue;
-    const weight = Math.pow(0.5, ageMin / 60); // half-life 1 jam
+    const weight = Math.pow(0.5, ageMin / 60);
     score += (r.available ? 1 : -1) * weight;
     if (!last || new Date(r.created_at) > new Date(last.created_at)) last = r;
   }
@@ -355,7 +357,7 @@ function render() {
       .bindPopup(`<b>${s.name}</b><br>${s.area}, ${s.reg}`)
       .on('click', () => openStation(s));
     
-    // Masukkan ke dalam cluster (bukan langsung ke peta)
+    // Masukkan ke dalam cluster (Opsi A)
     clusterGroup.addLayer(m);
     markers.set(s.id, m);
   }
@@ -427,7 +429,6 @@ function openStation(s) {
 
 // ====== KIRIM LAPORAN ======
 async function sendReport(s) {
-  // Rate limit lokal: 1 laporan per SPBU per 10 menit
   const key = `r_${s.id}_${FUEL}`;
   try {
     const last = +localStorage.getItem(key) || 0;
@@ -444,14 +445,12 @@ async function sendReport(s) {
     device: DEVICE
   };
   
-  // Optimistic update: tampilkan dulu di peta
   REPORTS.push({ ...row, created_at: new Date().toISOString() });
   draft = { available: null };
   render();
   toast('✅ Terima kasih! Laporan Anda langsung tampil.');
   try { localStorage.setItem(key, Date.now()); } catch (e) {}
   
-  // Kirim ke server
   try {
     const r = await fetch('/api/report', {
       method: 'POST',
@@ -469,30 +468,7 @@ async function sendReport(s) {
   setTimeout(hideSheet, 800);
 }
 
-// ====== AMBIL LAPORAN DARI SERVER ======
-async function loadReports() {
-  try {
-    const r = await fetch('/api/reports');
-    if (!r.ok) return;
-    const j = await r.json();
-    const FU = ['pertalite', 'pertamax', 'solar'];
-    REPORTS = (j.rows || []).map(a => ({
-      id: a[0],
-      station_id: a[1],
-      fuel: FU[a[2]] || 'pertalite',
-      available: !!a[3],
-      created_at: new Date(a[4] * 1000).toISOString()
-    }));
-    render();
-  } catch (e) {
-    console.error('Gagal ambil laporan:', e);
-  }
-}
-
-// ====== START ======
-render();
-loadReports();
-// === FITUR: CARI SPBU TERDEKAT ===
+// ====== FITUR GPS TERDEKAT (Opsi B) ======
 document.getElementById('btnNearest').onclick = () => {
   if (!navigator.geolocation) {
     toast('Browser Anda tidak mendukung GPS.');
@@ -506,26 +482,23 @@ document.getElementById('btnNearest').onclick = () => {
       const userLat = pos.coords.latitude;
       const userLon = pos.coords.longitude;
 
-      // Hitung jarak dan filter hanya yang ada BBM (status 'ok')
       const nearby = STATIONS.map(s => {
         const st = stationState(s);
         const dist = getDistanceFromLatLonInKm(userLat, userLon, s.lat, s.lon);
         return { ...s, dist, status: st.cls };
       })
-      .filter(s => s.status === 'ok') // Hanya tampilkan yang ada BBM
-      .sort((a, b) => a.dist - b.dist) // Urutkan dari terdekat
-      .slice(0, 5); // Ambil 5 teratas
+      .filter(s => s.status === 'ok')
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 5);
 
       if (nearby.length === 0) {
         toast('Tidak ada SPBU dengan BBM di sekitar Anda.');
         return;
       }
 
-      // Tampilkan hasil di bottom sheet
       let html = `<h2>SPBU Terdekat Ada BBM</h2><div class="sub">Dari lokasi Anda saat ini</div><div style="margin-top:10px">`;
       nearby.forEach(s => {
-        html += `
-        <div class="item" style="padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer;" onclick="openStation(STATIONS.find(x=>x.id===${s.id}))">
+        html += `<div class="item" onclick="openStation(STATIONS.find(x=>x.id===${s.id}))">
           <b>${s.name}</b>
           <div class="sub">${s.dist.toFixed(1)} km · ${s.area} · ✅ Ada BBM</div>
         </div>`;
@@ -555,7 +528,31 @@ function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 function deg2rad(deg) { return deg * (Math.PI/180); }
-setInterval(loadReports, 60000); // refresh tiap 1 menit
+
+// ====== AMBIL LAPORAN DARI SERVER ======
+async function loadReports() {
+  try {
+    const r = await fetch('/api/reports');
+    if (!r.ok) return;
+    const j = await r.json();
+    const FU = ['pertalite', 'pertamax', 'solar'];
+    REPORTS = (j.rows || []).map(a => ({
+      id: a[0],
+      station_id: a[1],
+      fuel: FU[a[2]] || 'pertalite',
+      available: !!a[3],
+      created_at: new Date(a[4] * 1000).toISOString()
+    }));
+    render();
+  } catch (e) {
+    console.error('Gagal ambil laporan:', e);
+  }
+}
+
+// ====== START ======
+render();
+loadReports();
+setInterval(loadReports, 60000);
 </script>
 </body>
 </html>
